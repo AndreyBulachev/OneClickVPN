@@ -53,6 +53,21 @@ sudo bash install-xray-reality.sh
 
 Скрипт интерактивный: он попросит подтвердить установку, выбрать `dest`-сайт для Reality и подтвердить публичный IP или домен сервера для клиентской ссылки.
 
+## Локальная проверка
+
+Перед публикацией можно проверить синтаксис и встроенные unit-проверки парсинга:
+
+```bash
+bash -n core/ubuntu/install-xray-reality.sh
+bash core/ubuntu/install-xray-reality.sh --self-test
+```
+
+Для проверки в чистой Ubuntu 24.04 через Docker:
+
+```bash
+bash scripts/test-install-xray-reality-docker.sh
+```
+
 После успешного завершения скрипт выведет:
 
 - VLESS-ссылку для импорта в клиент;

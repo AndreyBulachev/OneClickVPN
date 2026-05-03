@@ -278,11 +278,14 @@ generate_materials() {
   fi
   REALITY_PRIVATE_KEY="$(extract_x25519_key "privatekey" <<<"$key_output")"
   REALITY_PUBLIC_KEY="$(extract_x25519_key "publickey" <<<"$key_output")"
+  if [[ -z "$REALITY_PUBLIC_KEY" ]]; then
+    REALITY_PUBLIC_KEY="$(extract_x25519_key "password" <<<"$key_output")"
+  fi
   SHORT_ID="$(openssl rand -hex 8)"
 
   [[ -n "$XRAY_UUID" ]] || die "Не удалось сгенерировать UUID."
   [[ -n "$REALITY_PRIVATE_KEY" ]] || die "Не удалось получить private key из xray x25519."
-  [[ -n "$REALITY_PUBLIC_KEY" ]] || die "Не удалось получить public key из xray x25519."
+  [[ -n "$REALITY_PUBLIC_KEY" ]] || die "Не удалось получить public key/password из xray x25519."
 }
 
 detect_server_address() {
@@ -507,6 +510,33 @@ final_checks() {
   systemctl is-active --quiet xray && printf 'active\n' || die "Сервис xray не активен."
 }
 
+self_test_assert_equal() {
+  local name="$1"
+  local expected="$2"
+  local actual="$3"
+
+  if [[ "$actual" != "$expected" ]]; then
+    printf 'FAIL: %s\n  expected: %s\n  actual  : %s\n' "$name" "$expected" "$actual" >&2
+    return 1
+  fi
+}
+
+self_test() {
+  local old_format new_format spaced_format
+  old_format=$'Private key: old-private\nPublic key: old-public'
+  new_format=$'PrivateKey: new-private\nPassword: new-password\nHash32: ignored'
+  spaced_format=$'Private key : spaced-private\r\nPublic key : spaced-public'
+
+  self_test_assert_equal "old private key" "old-private" "$(extract_x25519_key "privatekey" <<<"$old_format")"
+  self_test_assert_equal "old public key" "old-public" "$(extract_x25519_key "publickey" <<<"$old_format")"
+  self_test_assert_equal "new private key" "new-private" "$(extract_x25519_key "privatekey" <<<"$new_format")"
+  self_test_assert_equal "new password as public key" "new-password" "$(extract_x25519_key "password" <<<"$new_format")"
+  self_test_assert_equal "spaced private key" "spaced-private" "$(extract_x25519_key "privatekey" <<<"$spaced_format")"
+  self_test_assert_equal "spaced public key" "spaced-public" "$(extract_x25519_key "publickey" <<<"$spaced_format")"
+
+  ok "Self-test passed."
+}
+
 main() {
   declare XRAY_UUID REALITY_PRIVATE_KEY REALITY_PUBLIC_KEY SHORT_ID SERVER_ADDRESS DEST_SITE CLIENT_URI
 
@@ -537,4 +567,11 @@ main() {
   ok "Готово."
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  if [[ "${1:-}" == "--self-test" ]]; then
+    self_test
+    exit 0
+  fi
+
+  main "$@"
+fi
