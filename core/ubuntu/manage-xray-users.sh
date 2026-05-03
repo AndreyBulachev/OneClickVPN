@@ -205,6 +205,23 @@ build_client_uri() {
     "$uuid" "$server" "$port" "$sni" "$public_key" "$short_id" "$encoded_email"
 }
 
+print_client_uri_and_qr() {
+  local uuid="$1"
+  local email="$2"
+  local client_uri
+
+  client_uri="$(build_client_uri "$uuid" "$email")"
+  [[ -n "$client_uri" ]] || return 0
+
+  printf 'VLESS: %s\n' "$client_uri"
+  if command -v qrencode >/dev/null 2>&1; then
+    printf '\nQR-код:\n'
+    qrencode -t ansiutf8 "$client_uri"
+  else
+    warn "qrencode не найден, QR-код не выведен. Установите: sudo apt-get install -y qrencode"
+  fi
+}
+
 validate_xray_config() {
   local config_path="${1:-$XRAY_CONFIG}"
   jq empty "$config_path" >/dev/null
@@ -255,7 +272,7 @@ add_user() {
 
   ok "Пользователь добавлен: ${email}"
   printf 'UUID: %s\n' "$uuid"
-  build_client_uri "$uuid" "$email"
+  print_client_uri_and_qr "$uuid" "$email"
 }
 
 delete_user() {
@@ -359,6 +376,12 @@ exit 0
 EOF
   chmod +x "$mockbin/systemctl"
 
+  cat > "$mockbin/qrencode" <<'EOF'
+#!/usr/bin/env bash
+printf 'QR:%s\n' "${*: -1}"
+EOF
+  chmod +x "$mockbin/qrencode"
+
   cat > "$config" <<'EOF'
 {
   "inbounds": [
@@ -395,7 +418,8 @@ EOF
   grep -q "first@example.com" <<<"$output"
   grep -q "second@example.com" <<<"$output"
   grep -q "11111111-1111-4111-8111-111111111111" "$config"
-  grep -q "vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443" /tmp/xray-user-add.out
+  grep -q "VLESS: vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443" /tmp/xray-user-add.out
+  grep -q "QR:vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443" /tmp/xray-user-add.out
 
   PATH="${mockbin}:$PATH" XRAY_CONFIG="$config" XRAY_USER_ALLOW_NON_ROOT_FOR_TESTS=1 bash "$0" delete second@example.com --no-restart >/dev/null
   output="$(PATH="${mockbin}:$PATH" XRAY_CONFIG="$config" XRAY_USER_ALLOW_NON_ROOT_FOR_TESTS=1 bash "$0" list)"

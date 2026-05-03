@@ -98,7 +98,7 @@ chmod +x manage-xray-users.sh
 sudo bash manage-xray-users.sh list
 ```
 
-Добавить пользователя и получить VLESS-ссылку:
+Добавить пользователя и получить VLESS-ссылку с QR-кодом:
 
 ```bash
 sudo bash manage-xray-users.sh add user@example.com --server YOUR_SERVER_IP_OR_DOMAIN
@@ -111,7 +111,7 @@ sudo bash manage-xray-users.sh delete user@example.com
 sudo bash manage-xray-users.sh delete 00000000-0000-4000-8000-000000000000
 ```
 
-Скрипт перед изменением делает backup рядом с конфигом, проверяет новый JSON через `xray run -test` и перезапускает `xray`. Для сухой проверки без перезапуска можно добавить `--no-restart`.
+Скрипт перед изменением делает backup рядом с конфигом, проверяет новый JSON через `xray run -test` и перезапускает `xray`. После добавления пользователя он выводит UUID, VLESS-ссылку и QR-код в терминале, если установлен `qrencode`. Для сухой проверки без перезапуска можно добавить `--no-restart`.
 
 ## Клиенты
 
