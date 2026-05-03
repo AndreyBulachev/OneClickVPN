@@ -161,6 +161,36 @@ is_valid_host_port() {
   (( port >= 1 && port <= 65535 ))
 }
 
+extract_x25519_key() {
+  local label="$1"
+  awk -v wanted="$label" '
+    BEGIN {
+      wanted = tolower(wanted)
+      gsub(/[^a-z0-9]/, "", wanted)
+    }
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (line !~ /:/) {
+        next
+      }
+
+      key_label = line
+      sub(/:.*/, "", key_label)
+      key_label = tolower(key_label)
+      gsub(/[^a-z0-9]/, "", key_label)
+
+      if (key_label == wanted) {
+        value = line
+        sub(/^[^:]*:/, "", value)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        print value
+        exit
+      }
+    }
+  '
+}
+
 check_dest_site() {
   local dest="$1"
   local host port http_code tls_output alpn_output
@@ -243,9 +273,11 @@ generate_materials() {
   XRAY_UUID="$(xray uuid)"
 
   local key_output
-  key_output="$(xray x25519)"
-  REALITY_PRIVATE_KEY="$(awk -F': ' '/Private key|Private Key/ {print $2}' <<<"$key_output")"
-  REALITY_PUBLIC_KEY="$(awk -F': ' '/Public key|Public Key/ {print $2}' <<<"$key_output")"
+  if ! key_output="$(xray x25519 2>&1)"; then
+    die "Не удалось выполнить 'xray x25519'. Проверьте установку Xray."
+  fi
+  REALITY_PRIVATE_KEY="$(extract_x25519_key "privatekey" <<<"$key_output")"
+  REALITY_PUBLIC_KEY="$(extract_x25519_key "publickey" <<<"$key_output")"
   SHORT_ID="$(openssl rand -hex 8)"
 
   [[ -n "$XRAY_UUID" ]] || die "Не удалось сгенерировать UUID."
