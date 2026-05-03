@@ -19,6 +19,10 @@ log() {
   printf '\n\033[1;34m==>\033[0m %s\n' "$*" >&2
 }
 
+ok() {
+  printf '\033[1;32mOK:\033[0m %s\n' "$*" >&2
+}
+
 warn() {
   printf '\033[1;33mWARN:\033[0m %s\n' "$*" >&2
 }
@@ -26,6 +30,11 @@ warn() {
 die() {
   printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2
   exit 1
+}
+
+print_banner() {
+  printf '\n\033[1;34mXray VLESS Reality installer\033[0m\n' >&2
+  printf 'Ubuntu-only setup for Xray-core, VLESS and XTLS-Reality.\n' >&2
 }
 
 require_root() {
@@ -98,8 +107,15 @@ net.core.somaxconn = 4096
 net.ipv4.ip_local_port_range = 1024 65535
 EOF
 
-  sysctl --system
-  sysctl net.ipv4.tcp_congestion_control
+  sysctl --system >/dev/null
+
+  local congestion_control
+  congestion_control="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"
+  if [[ "$congestion_control" == "bbr" ]]; then
+    ok "BBR активирован."
+  else
+    warn "BBR не активирован сейчас (текущее значение: ${congestion_control:-unknown}). Может потребоваться ребут или поддержка BBR в ядре."
+  fi
 }
 
 install_xray() {
@@ -147,7 +163,7 @@ is_valid_host_port() {
 
 check_dest_site() {
   local dest="$1"
-  local host port http_code tls_output
+  local host port http_code tls_output alpn_output
   host="$(dest_host "$dest")"
   port="$(dest_port "$dest")"
 
@@ -158,15 +174,13 @@ check_dest_site() {
     return 1
   fi
 
-  if ! timeout 10 openssl s_client -tls1_3 -servername "$host" -connect "$host:$port" </dev/null >/tmp/xray-reality-tls-check.log 2>&1; then
+  if ! tls_output="$(timeout 10 openssl s_client -tls1_3 -servername "$host" -connect "$host:$port" </dev/null 2>&1)"; then
     warn "TLS 1.3 handshake не прошёл."
     return 1
   fi
 
-  tls_output="$(cat /tmp/xray-reality-tls-check.log)"
-  if ! grep -q "Verify return code: 0 (ok)" /tmp/xray-reality-tls-check.log; then
-    warn "Сертификат сайта не прошёл проверку."
-    return 1
+  if ! grep -q "Verify return code: 0 (ok)" <<<"$tls_output"; then
+    warn "Сертификат сайта не прошёл проверку системным CA-store. Продолжаю: для Reality это не является обязательным условием."
   fi
 
   if ! grep -Eq "TLSv1\.3|Protocol *: TLSv1\.3|New, TLSv1\.3" <<<"$tls_output"; then
@@ -174,9 +188,11 @@ check_dest_site() {
     return 1
   fi
 
-  if ! timeout 10 openssl s_client -tls1_3 -alpn h2 -servername "$host" -connect "$host:$port" </dev/null 2>/tmp/xray-reality-alpn-check.log | grep -q "ALPN protocol: h2"; then
-    warn "HTTP/2 через ALPN h2 не подтверждён."
-    return 1
+  alpn_output="$(timeout 10 openssl s_client -tls1_3 -alpn h2 -servername "$host" -connect "$host:$port" </dev/null 2>&1 || true)"
+  if grep -q "ALPN protocol: h2" <<<"$alpn_output"; then
+    ok "HTTP/2 через ALPN h2 подтверждён."
+  else
+    warn "HTTP/2 через ALPN h2 не подтверждён. Продолжаю: это некритичная проверка для Reality."
   fi
 
   http_code="$(curl -4 -L -I -sS --connect-timeout 8 --max-time 15 -o /dev/null -w '%{http_code}' "https://$host:$port" || true)"
@@ -185,7 +201,7 @@ check_dest_site() {
     return 1
   fi
 
-  printf 'OK: TLS 1.3, HTTP/2 и доступность подтверждены для %s\n' "$dest" >&2
+  ok "TLS 1.3 и доступность подтверждены для ${dest}."
 }
 
 choose_dest_site() {
@@ -367,7 +383,14 @@ start_xray() {
   systemctl enable xray
   systemctl restart xray
   sleep 2
+
+  if ! systemctl is-active --quiet xray; then
+    systemctl --no-pager --full status xray || true
+    die "Xray не запустился. Смотри: journalctl -u xray -n 50"
+  fi
+
   systemctl --no-pager --full status xray
+  ok "Xray активен."
 }
 
 build_client_uri() {
@@ -380,9 +403,7 @@ build_client_uri() {
   CLIENT_URI="vless://${XRAY_UUID}@${SERVER_ADDRESS}:${PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${sni}&fp=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp#${encoded_remark}"
 }
 
-print_client_config() {
-  log "Клиентская конфигурация"
-
+save_client_config() {
   cat > "$CLIENT_OUTPUT" <<EOF
 Server: ${SERVER_ADDRESS}
 Port: ${PORT}
@@ -399,6 +420,11 @@ Fingerprint: chrome
 ${CLIENT_URI}
 EOF
   chmod 600 "$CLIENT_OUTPUT"
+  ok "Клиентская конфигурация сохранена в ${CLIENT_OUTPUT}."
+}
+
+print_client_config() {
+  log "Клиентская конфигурация"
 
   printf '\n%s\n\n' "$CLIENT_URI"
   qrencode -t ansiutf8 "$CLIENT_URI"
@@ -432,8 +458,12 @@ EOF
 final_checks() {
   log "Итоговая проверка"
 
-  printf 'BBR: '
-  sysctl -n net.ipv4.tcp_congestion_control
+  local congestion_control
+  congestion_control="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)"
+  printf 'BBR: %s\n' "${congestion_control:-unknown}"
+  if [[ "$congestion_control" != "bbr" ]]; then
+    warn "BBR не активен. VPN может работать, но TCP-ускорение не применилось."
+  fi
 
   printf '\nUFW:\n'
   ufw status
@@ -446,6 +476,9 @@ final_checks() {
 }
 
 main() {
+  declare XRAY_UUID REALITY_PRIVATE_KEY REALITY_PUBLIC_KEY SHORT_ID SERVER_ADDRESS DEST_SITE CLIENT_URI
+
+  print_banner
   require_root
   require_ubuntu
 
@@ -463,12 +496,13 @@ main() {
   detect_server_address
   write_xray_config "$DEST_SITE"
   validate_xray_config
-  start_xray
   build_client_uri "$DEST_SITE"
+  save_client_config
+  start_xray
   final_checks
   print_client_config
 
-  log "Готово"
+  ok "Готово."
 }
 
 main "$@"
