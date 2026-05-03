@@ -46,7 +46,7 @@
 ```bash
 sudo apt-get update
 sudo apt-get install -y curl
-curl -L https://raw.githubusercontent.com/AndreyBulachev/OneClickVPN/main/core/ubuntu/install-xray-reality.sh -o install-xray-reality.sh
+curl -L https://raw.githubusercontent.com/AndreyBulachev/OneClickVPN/master/core/ubuntu/install-xray-reality.sh -o install-xray-reality.sh
 chmod +x install-xray-reality.sh
 sudo bash install-xray-reality.sh
 ```
