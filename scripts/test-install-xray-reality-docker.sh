@@ -9,8 +9,13 @@ docker run --rm \
   ubuntu:24.04 \
   bash -lc '
     set -Eeuo pipefail
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update >/dev/null
+    apt-get install -y --no-install-recommends jq >/dev/null
     bash -n core/ubuntu/install-xray-reality.sh
+    bash -n core/ubuntu/manage-xray-users.sh
     bash core/ubuntu/install-xray-reality.sh --self-test
+    bash core/ubuntu/manage-xray-users.sh --self-test
   '
 
 if [[ "${LIVE_XRAY_TEST:-0}" == "1" ]]; then

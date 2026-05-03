@@ -30,6 +30,7 @@
 - Запускает `xray` и включает автозапуск через `systemd`.
 - Формирует VLESS-ссылку и QR-код для клиента.
 - Сохраняет клиентскую конфигурацию в `/root/xray-reality-client.txt`.
+- В репозитории есть отдельный скрипт управления пользователями Xray: просмотр списка, добавление и удаление клиентов в `settings.clients`.
 
 ## Требования
 
@@ -59,7 +60,9 @@ sudo bash install-xray-reality.sh
 
 ```bash
 bash -n core/ubuntu/install-xray-reality.sh
+bash -n core/ubuntu/manage-xray-users.sh
 bash core/ubuntu/install-xray-reality.sh --self-test
+bash core/ubuntu/manage-xray-users.sh --self-test
 ```
 
 Для проверки в чистой Ubuntu 24.04 через Docker:
@@ -79,6 +82,36 @@ LIVE_XRAY_TEST=1 bash scripts/test-install-xray-reality-docker.sh
 - VLESS-ссылку для импорта в клиент;
 - QR-код для мобильных клиентов;
 - путь к файлу с параметрами: `/root/xray-reality-client.txt`.
+
+## Управление пользователями Xray
+
+После установки можно управлять клиентами в `/usr/local/etc/xray/config.json` отдельным скриптом:
+
+```bash
+curl -L https://raw.githubusercontent.com/AndreyBulachev/OneClickVPN/master/core/ubuntu/manage-xray-users.sh -o manage-xray-users.sh
+chmod +x manage-xray-users.sh
+```
+
+Вывести список пользователей:
+
+```bash
+sudo bash manage-xray-users.sh list
+```
+
+Добавить пользователя и получить VLESS-ссылку:
+
+```bash
+sudo bash manage-xray-users.sh add user@example.com --server YOUR_SERVER_IP_OR_DOMAIN
+```
+
+Удалить пользователя по email или UUID:
+
+```bash
+sudo bash manage-xray-users.sh delete user@example.com
+sudo bash manage-xray-users.sh delete 00000000-0000-4000-8000-000000000000
+```
+
+Скрипт перед изменением делает backup рядом с конфигом, проверяет новый JSON через `xray run -test` и перезапускает `xray`. Для сухой проверки без перезапуска можно добавить `--no-restart`.
 
 ## Клиенты
 
