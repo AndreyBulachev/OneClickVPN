@@ -398,7 +398,7 @@ write_xray_config() {
 }
 EOF
 
-  chmod 600 "$XRAY_CONFIG"
+  set_xray_config_permissions
 }
 
 validate_xray_config() {
@@ -409,6 +409,20 @@ validate_xray_config() {
   if ! xray run -test -config "$XRAY_CONFIG"; then
     die "Xray отклонил конфигурацию. Сервис не будет запущен."
   fi
+}
+
+set_xray_config_permissions() {
+  local service_user service_group
+  service_user="$(systemctl show xray -p User --value 2>/dev/null || true)"
+  service_group="$(systemctl show xray -p Group --value 2>/dev/null || true)"
+
+  service_user="${service_user:-root}"
+  service_group="${service_group:-$service_user}"
+
+  if ! chown "${service_user}:${service_group}" "$XRAY_CONFIG" 2>/dev/null; then
+    chown "${service_user}" "$XRAY_CONFIG"
+  fi
+  chmod 600 "$XRAY_CONFIG"
 }
 
 start_xray() {
