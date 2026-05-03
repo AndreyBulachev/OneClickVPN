@@ -180,7 +180,7 @@ extract_x25519_key() {
       key_label = tolower(key_label)
       gsub(/[^a-z0-9]/, "", key_label)
 
-      if (key_label == wanted) {
+      if (key_label == wanted || index(key_label, wanted) > 0) {
         value = line
         sub(/^[^:]*:/, "", value)
         gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
@@ -524,7 +524,7 @@ self_test_assert_equal() {
 self_test() {
   local old_format new_format spaced_format
   old_format=$'Private key: old-private\nPublic key: old-public'
-  new_format=$'PrivateKey: new-private\nPassword: new-password\nHash32: ignored'
+  new_format=$'PrivateKey: new-private\nPassword (PublicKey): new-password\nHash32: ignored'
   spaced_format=$'Private key : spaced-private\r\nPublic key : spaced-public'
 
   self_test_assert_equal "old private key" "old-private" "$(extract_x25519_key "privatekey" <<<"$old_format")"

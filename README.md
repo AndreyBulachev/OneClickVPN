@@ -68,6 +68,12 @@ bash core/ubuntu/install-xray-reality.sh --self-test
 bash scripts/test-install-xray-reality-docker.sh
 ```
 
+Чтобы дополнительно скачать свежий Xray release и проверить реальный формат `xray x25519`:
+
+```bash
+LIVE_XRAY_TEST=1 bash scripts/test-install-xray-reality-docker.sh
+```
+
 После успешного завершения скрипт выведет:
 
 - VLESS-ссылку для импорта в клиент;
