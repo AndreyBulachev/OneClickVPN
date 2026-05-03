@@ -417,12 +417,30 @@ set_xray_config_permissions() {
   service_group="$(systemctl show xray -p Group --value 2>/dev/null || true)"
 
   service_user="${service_user:-root}"
-  service_group="${service_group:-$service_user}"
-
-  if ! chown "${service_user}:${service_group}" "$XRAY_CONFIG" 2>/dev/null; then
-    chown "${service_user}" "$XRAY_CONFIG"
+  if [[ -z "$service_group" && "$service_user" != "root" ]]; then
+    service_group="$(id -gn "$service_user" 2>/dev/null || true)"
   fi
-  chmod 600 "$XRAY_CONFIG"
+  service_group="${service_group:-root}"
+
+  if ! chown root:"$service_group" "$XRAY_CONFIG" 2>/dev/null; then
+    warn "Не удалось назначить группу ${service_group} для ${XRAY_CONFIG}. Использую права 0644."
+    chown root:root "$XRAY_CONFIG"
+    chmod 644 "$XRAY_CONFIG"
+    return 0
+  fi
+
+  if [[ "$service_user" != "root" ]]; then
+    chmod 640 "$XRAY_CONFIG"
+    if command -v runuser >/dev/null 2>&1 && ! runuser -u "$service_user" -- test -r "$XRAY_CONFIG"; then
+      warn "Пользователь ${service_user} не может прочитать ${XRAY_CONFIG} с правами 0640. Использую fallback 0644."
+      chmod 644 "$XRAY_CONFIG"
+      return 0
+    fi
+    ok "Конфигурация Xray доступна пользователю ${service_user}:${service_group}."
+  else
+    chmod 600 "$XRAY_CONFIG"
+    ok "Конфигурация Xray доступна root."
+  fi
 }
 
 start_xray() {
