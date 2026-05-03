@@ -240,8 +240,19 @@ generate_materials() {
 detect_server_address() {
   log "Определение адреса сервера"
 
-  local detected
-  detected="$(curl -4 -sS --connect-timeout 5 https://api.ipify.org || true)"
+  local detected service candidate
+  detected=""
+  for service in \
+    "https://api.ipify.org" \
+    "https://ifconfig.me" \
+    "https://ipv4.icanhazip.com"; do
+    candidate="$(curl -4 -sS --connect-timeout 5 --max-time 8 "$service" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [[ "$candidate" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      detected="$candidate"
+      break
+    fi
+  done
+
   if [[ -n "$detected" ]]; then
     read -r -p "Публичный адрес сервера [$detected]: " SERVER_ADDRESS
     SERVER_ADDRESS="${SERVER_ADDRESS:-$detected}"
@@ -336,7 +347,7 @@ write_xray_config() {
 }
 EOF
 
-  chmod 644 "$XRAY_CONFIG"
+  chmod 600 "$XRAY_CONFIG"
 }
 
 validate_xray_config() {
@@ -355,6 +366,7 @@ start_xray() {
   systemctl daemon-reload
   systemctl enable xray
   systemctl restart xray
+  sleep 2
   systemctl --no-pager --full status xray
 }
 
@@ -390,6 +402,30 @@ EOF
 
   printf '\n%s\n\n' "$CLIENT_URI"
   qrencode -t ansiutf8 "$CLIENT_URI"
+
+  printf '\nПараметры подключения:\n'
+  printf '  Server      : %s\n' "$SERVER_ADDRESS"
+  printf '  Port        : %s\n' "$PORT"
+  printf '  UUID        : %s\n' "$XRAY_UUID"
+  printf '  Public key  : %s\n' "$REALITY_PUBLIC_KEY"
+  printf '  Short ID    : %s\n' "$SHORT_ID"
+  printf '  SNI         : %s\n' "$(dest_host "$DEST_SITE")"
+  printf '  Dest        : %s\n' "$DEST_SITE"
+  printf '  Fingerprint : chrome\n'
+
+  printf '\nПолезные команды:\n'
+  printf '  systemctl status xray\n'
+  printf '  journalctl -u xray -f\n'
+  printf '  systemctl restart xray\n'
+  printf '  xray run -test -config %s\n' "$XRAY_CONFIG"
+
+  printf '\nРекомендуемые клиенты:\n'
+  printf '  Android : v2rayNG, Hiddify\n'
+  printf '  iOS     : Hiddify, Shadowrocket\n'
+  printf '  Windows : v2rayN\n'
+  printf '  macOS   : V2Box, Hiddify\n'
+  printf '  Linux   : Nekoray, Hiddify\n'
+
   printf '\nКонфигурация сохранена в %s\n' "$CLIENT_OUTPUT"
 }
 
