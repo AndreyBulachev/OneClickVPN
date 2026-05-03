@@ -31,11 +31,13 @@ usage() {
 
 Использование:
   sudo bash $0 list [--config PATH]
+  sudo bash $0 show UUID_OR_EMAIL [--server IP_OR_DOMAIN] [--config PATH]
   sudo bash $0 add EMAIL [--server IP_OR_DOMAIN] [--config PATH] [--no-restart]
   sudo bash $0 delete UUID_OR_EMAIL [--config PATH] [--no-restart]
 
 Команды:
   list              вывести пользователей из первого VLESS inbound
+  show TARGET       вывести данные пользователя, VLESS-ссылку и QR-код
   add EMAIL         добавить пользователя, сгенерировать UUID и VLESS-ссылку
   delete TARGET     удалить пользователя по UUID или email
 
@@ -108,6 +110,19 @@ list_users() {
         (.[] | [.id, (.email // "-"), (.flow // "-"), ((.level // 0) | tostring)] | @tsv)
       end
   ' "$XRAY_CONFIG" | if command -v column >/dev/null 2>&1; then column -t -s $'\t'; else cat; fi
+}
+
+find_user_json() {
+  local target="$1"
+  local inbound_index
+  validate_target "$target"
+  inbound_index="$(vless_inbound_index)"
+
+  jq -er --argjson i "$inbound_index" --arg target "$target" '
+    .inbounds[$i].settings.clients // []
+    | map(select(.id == $target or (.email // "") == $target))
+    | first
+  ' "$XRAY_CONFIG"
 }
 
 extract_x25519_key() {
@@ -220,6 +235,25 @@ print_client_uri_and_qr() {
   else
     warn "qrencode не найден, QR-код не выведен. Установите: sudo apt-get install -y qrencode"
   fi
+}
+
+show_user() {
+  local target="$1"
+  local user_json uuid email flow level
+  ensure_config
+  user_json="$(find_user_json "$target")" || die "Пользователь '${target}' не найден."
+
+  uuid="$(jq -r '.id' <<<"$user_json")"
+  email="$(jq -r '.email // "-"' <<<"$user_json")"
+  flow="$(jq -r '.flow // "-"' <<<"$user_json")"
+  level="$(jq -r '(.level // 0) | tostring' <<<"$user_json")"
+
+  printf 'UUID : %s\n' "$uuid"
+  printf 'Email: %s\n' "$email"
+  printf 'Flow : %s\n' "$flow"
+  printf 'Level: %s\n\n' "$level"
+
+  print_client_uri_and_qr "$uuid" "$email"
 }
 
 validate_xray_config() {
@@ -421,6 +455,12 @@ EOF
   grep -q "VLESS: vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443" /tmp/xray-user-add.out
   grep -q "QR:vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443" /tmp/xray-user-add.out
 
+  output="$(PATH="${mockbin}:$PATH" XRAY_CONFIG="$config" SERVER_ADDRESS="vpn.example.com" XRAY_USER_ALLOW_NON_ROOT_FOR_TESTS=1 bash "$0" show second@example.com)"
+  grep -q "UUID : 11111111-1111-4111-8111-111111111111" <<<"$output"
+  grep -q "Email: second@example.com" <<<"$output"
+  grep -q "VLESS: vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443" <<<"$output"
+  grep -q "QR:vless://11111111-1111-4111-8111-111111111111@vpn.example.com:443" <<<"$output"
+
   PATH="${mockbin}:$PATH" XRAY_CONFIG="$config" XRAY_USER_ALLOW_NON_ROOT_FOR_TESTS=1 bash "$0" delete second@example.com --no-restart >/dev/null
   output="$(PATH="${mockbin}:$PATH" XRAY_CONFIG="$config" XRAY_USER_ALLOW_NON_ROOT_FOR_TESTS=1 bash "$0" list)"
   grep -q "first@example.com" <<<"$output"
@@ -438,6 +478,11 @@ main() {
       require_root
       require_tools
       list_users
+      ;;
+    show|info)
+      require_root
+      require_tools
+      show_user "${POSITIONAL[0]:-}"
       ;;
     add)
       require_root
