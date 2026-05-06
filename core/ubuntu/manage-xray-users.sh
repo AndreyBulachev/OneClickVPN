@@ -286,7 +286,7 @@ add_user() {
   uuid="$(xray uuid)"
   [[ -n "$uuid" ]] || die "Не удалось сгенерировать UUID."
 
-  tmp_file="$(mktemp)"
+  tmp_file="$(mktemp --suffix=.json)"
   jq --argjson i "$inbound_index" --arg uuid "$uuid" --arg email "$email" '
     .inbounds[$i].settings.clients =
       ((.inbounds[$i].settings.clients // []) + [{
@@ -318,7 +318,7 @@ delete_user() {
   inbound_index="$(vless_inbound_index)"
   before="$(jq -r --argjson i "$inbound_index" '.inbounds[$i].settings.clients // [] | length' "$XRAY_CONFIG")"
 
-  tmp_file="$(mktemp)"
+  tmp_file="$(mktemp --suffix=.json)"
   jq --argjson i "$inbound_index" --arg target "$target" '
     .inbounds[$i].settings.clients =
       ((.inbounds[$i].settings.clients // [])
@@ -395,6 +395,18 @@ case "${1:-}" in
     printf 'Private key: private\nPublic key: public\n'
     ;;
   run)
+    config_path=""
+    while [[ "$#" -gt 0 ]]; do
+      case "$1" in
+        -config)
+          shift
+          config_path="${1:-}"
+          ;;
+      esac
+      shift || true
+    done
+    [[ "$config_path" == *.json ]] || exit 23
+    jq empty "$config_path" >/dev/null
     exit 0
     ;;
   *)
